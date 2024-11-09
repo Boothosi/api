@@ -1,7 +1,9 @@
 import random
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify
+from flask_cors import CORS
 
 app = Flask(__name__)
+CORS(app)
 
 # Generator for some mock tags for the mops
 def generate_mac_address():
