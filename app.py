@@ -2,6 +2,8 @@ import random
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 import sqlite3
+from datetime import datetime
+
 
 app = Flask(__name__)
 # Fix local CORS errors
@@ -137,8 +139,7 @@ def change_mop(mac_address):
             return jsonify(tag)
     return jsonify(message="Tag not found")
 
-# Notify about a mop location, storing in database
-# Notify about a mop location, storing in database
+@app.route('/api/mops/location', methods=['POST'])
 @app.route('/api/mops/location', methods=['POST'])
 def notify_mop_location():
     # Get data from the POST request (expecting JSON with mac_address and location)
@@ -150,21 +151,66 @@ def notify_mop_location():
     if not mac_address or not location:
         return jsonify(message="Mac address and location are required"), 400
     
-    # Store the mop location in the SQLite database
+    # Get the current timestamp (this will be stored in the 'last_turn' field)
+    current_timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    current_date = datetime.now().strftime('%Y-%m-%d')  # Get the current date for checking (no time part)
+
+    # Store the mop location and timestamp in the SQLite database
     conn = sqlite3.connect(DATABASE)
     cursor = conn.cursor()
-    
-    # Insert the location data into the mop_locations table
+
+    # Check if the mop has been in laundry, moved to another location, and returned to laundry
     cursor.execute('''
-        INSERT INTO MOCKAROO_DATA (mac_address, last_location)
-        VALUES (?, ?)
-    ''', (mac_address, location))
+        SELECT * FROM MOCKAROO_DATA 
+        WHERE mac_address = ? AND DATE(last_turn) = ?
+        ORDER BY last_turn DESC
+    ''', (mac_address, current_date))
+    previous_entries = cursor.fetchall()
+
+    # Determine the status for 'in_use'
+    in_use_status = 'true'  # Default to in_use = true for any location
+    
+    if previous_entries:
+        # Check if the mop has been in laundry, then moved elsewhere, and returned to laundry
+        for entry in previous_entries:
+            last_location = entry[3]  # last_location is at index 3
+            if last_location == 'laundry' and len(previous_entries) > 1:
+                for i in range(1, len(previous_entries)):
+                    if previous_entries[i][3] != 'laundry':  # If it has been to another location
+                        # If the mop was in laundry, moved to another location, and then back to laundry
+                        in_use_status = 'false'
+                        break
+                break
+    
+    # Insert or update the mop's location in the database
+    cursor.execute('''
+        SELECT * FROM MOCKAROO_DATA 
+        WHERE mac_address = ? AND last_location = ? AND DATE(last_turn) = ?
+    ''', (mac_address, location, current_date))
+
+    existing_mop = cursor.fetchone()
+
+    if existing_mop:
+        # If the record exists, update the timestamp and in_use status
+        cursor.execute('''
+            UPDATE MOCKAROO_DATA
+            SET last_turn = ?, in_use = ?
+            WHERE mac_address = ? AND last_location = ? AND DATE(last_turn) = ?
+        ''', (current_timestamp, in_use_status, mac_address, location, current_date))
+        message = "Mop location timestamp updated successfully"
+    else:
+        # If no record exists, insert a new record with in_use status
+        cursor.execute('''
+            INSERT INTO MOCKAROO_DATA (mac_address, last_location, last_turn, in_use)
+            VALUES (?, ?, ?, ?)
+        ''', (mac_address, location, current_timestamp, in_use_status))
+        message = "Mop location and timestamp posted successfully"
     
     # Commit changes and close the connection
     conn.commit()
     conn.close()
     
-    return jsonify(message="Mop location notified successfully", mac_address=mac_address, location=location)
+    return jsonify(message=message, mac_address=mac_address, location=location, timestamp=current_timestamp)
 
 
 if __name__ == '__main__':
