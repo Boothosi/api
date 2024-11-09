@@ -48,9 +48,11 @@ def all_db():
     cursor.execute(
         'SELECT * FROM MOCKAROO_DATA'
     )
+    columns = [column[0] for column in cursor.description]
     data = cursor.fetchall()
+    result = [dict(zip(columns, row)) for row in data]
     conn.close()
-    return jsonify(data)
+    return jsonify(result)
 
 # Get the data of all mops
 @app.route('/api/mops/all', methods=['GET'])
