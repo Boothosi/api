@@ -70,12 +70,6 @@ def get_tags_in_use():
 
 # Get all tags that are missing
 # Missing iff in_use == False && the work turn is over
-@app.route('/api/mops/is_missing', methods=['GET'])
-def get_tags_is_missing():
-    missing_tags = list(filter(lambda tag: tag["is_missing"], mock_mops_tags))
-    return jsonify(missing_tags)
-
-# Get the data of missing mops
 @app.route('/api/mops/missing', methods=['GET'])
 def get_missing_tags():
     missing_tags = list(filter(lambda tag: tag["is_missing"], mock_mops_tags))
