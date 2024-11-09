@@ -3,6 +3,7 @@ from flask import Flask, jsonify, request
 from flask_cors import CORS
 import sqlite3
 from datetime import datetime
+import json
 
 app = Flask(__name__)
 # Fix local CORS errors
@@ -29,6 +30,31 @@ def all_db():
     result = [dict(zip(columns, row)) for row in data]
     conn.close()
     return jsonify(data=result)
+
+# Set resettable tag NOT WORKING
+@app.route('/api/tags/resettable', methods=['POST'])
+def set_resettable():
+    conn = sqlite3.connect(DATABASE)
+    cursor = conn.cursor()
+    data = request.get_json()
+    mac_address = data.get('mac_address')
+    resettable = data.get('resettable')
+    cursor.execute('UPDATE TAGS SET resettable = ? WHERE mac_address = ?;',(resettable, mac_address))
+    conn.commit()  # Commit changes to the database
+    conn.close()   # Close the database connection
+
+    return "Set tag "+mac_address+" to resettable: "+ str(resettable),200
+
+# End shift routine
+@app.route('/endshift', methods=['POST'])
+def shift_end():
+    conn = sqlite3.connect(DATABASE)
+    cursor = conn.cursor()
+    cursor.execute('UPDATE MOPS SET is_missing=1, in_use=0 WHERE in_use=1')
+    conn.commit()  # Commit changes to the database
+    conn.close()   # Close the database connection
+    return 'Shift Ended and Mops Updated', 200
+
 
 @app.route('/api/mops/all', methods=['GET'])
 def all_mops():
@@ -317,6 +343,28 @@ def get_missing_tags():
     result = [dict(zip(columns, row)) for row in data]
     conn.close()
     return jsonify(result)
+
+# Know all the mac addresses in resettable state
+@app.route('/api/tags/resettable', methods=['GET'])
+def get_resettable_tags():
+    conn = sqlite3.connect(DATABASE)
+    cursor = conn.cursor()
+
+    try:
+        # Query all tags where resettable is set to 1
+        cursor.execute('SELECT mac_address FROM TAGS WHERE resettable = 1')
+        rows = cursor.fetchall()
+
+        # Prepare a list of mac_addresses
+        mac_addresses = [row[0] for row in rows]
+
+        # Return the list as JSON
+        return json.dumps(mac_addresses), 200
+    except sqlite3.Error as e:
+        print(f"Error querying database: {e}")
+        return json.dumps({"error": "Failed to retrieve resettable tags"}), 500
+    finally:
+        conn.close()
 
 # Change the mop (reset the tag usage), identify the mop by mac_address
 @app.route('/api/mops/change', methods=['POST'])
