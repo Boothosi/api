@@ -371,8 +371,8 @@ def notify_location():
             )
             # Also do the update in the mop in use
             cursor.execute(
-                'UPDATE MOPS SET last_seen_datetime = ? WHERE tag = ? AND is_replaced = 0',
-                (timestamp, tag)
+                'UPDATE MOPS SET last_location = ?, last_seen_datetime = ? WHERE tag = ? AND is_replaced = 0',
+                (location, timestamp, tag)
             )
         # If the last location and the new location are different
         else:
@@ -400,8 +400,8 @@ def notify_location():
                     (tag, location, timestamp)
                 )
                 cursor.execute(
-                    'UPDATE MOPS SET last_seen_datetime = ? WHERE tag = ? AND is_replaced = 0',
-                    (timestamp, tag)
+                    'UPDATE MOPS SET last_location = ?, last_seen_datetime = ? WHERE tag = ? AND is_replaced = 0',
+                    (location, timestamp, tag)
                 )
     # If there are no history entries
     # Then this is the first movement of a new mop (by default starting from laundry)
