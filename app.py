@@ -1,5 +1,5 @@
 import random
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request
 from flask_cors import CORS
 import sqlite3
 
@@ -135,5 +135,35 @@ def change_mop(mac_address):
             return jsonify(tag)
     return jsonify(message="Tag not found")
 
+# Notify about a mop location, storing in database
+# Notify about a mop location, storing in database
+@app.route('/api/mops/location', methods=['POST'])
+def notify_mop_location():
+    # Get data from the POST request (expecting JSON with mac_address and location)
+    data = request.get_json()
+    
+    mac_address = data.get('mac_address')
+    location = data.get('location')
+
+    if not mac_address or not location:
+        return jsonify(message="Mac address and location are required"), 400
+    
+    # Store the mop location in the SQLite database
+    conn = sqlite3.connect(DATABASE)
+    cursor = conn.cursor()
+    
+    # Insert the location data into the mop_locations table
+    cursor.execute('''
+        INSERT INTO MOCKAROO_DATA (mac_address, last_location)
+        VALUES (?, ?)
+    ''', (mac_address, location))
+    
+    # Commit changes and close the connection
+    conn.commit()
+    conn.close()
+    
+    return jsonify(message="Mop location notified successfully", mac_address=mac_address, location=location)
+
+
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(host="0.0.0.0", port=5000,debug=True)
