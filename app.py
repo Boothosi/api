@@ -1,9 +1,14 @@
 import random
 from flask import Flask, jsonify
 from flask_cors import CORS
+import sqlite3
 
 app = Flask(__name__)
+# Fix local CORS errors
 CORS(app)
+
+# Load sqlite database
+DATABASE = './database.db'
 
 # Generator for some mock tags for the mops
 def generate_mac_address():
@@ -34,6 +39,18 @@ mock_mops_tags = generate_mock_mop_tags(10)
 @app.route('/')
 def home():
     return jsonify(message="MopTag API")
+
+# TEST: get all from db
+@app.route('/db')
+def all_db():
+    conn = sqlite3.connect(DATABASE)
+    cursor = conn.cursor()
+    cursor.execute(
+        'SELECT * FROM MOCKAROO_DATA'
+    )
+    data = cursor.fetchall()
+    conn.close()
+    return jsonify(data)
 
 # Get the data of all mops
 @app.route('/api/mops/all', methods=['GET'])
