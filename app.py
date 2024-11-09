@@ -30,6 +30,19 @@ def all_db():
     conn.close()
     return jsonify(data=result)
 
+# Set resettable tag
+@app.route('/api/tags/resettable', methods=['POST'])
+def set_resettable():
+    conn = sqlite3.connect(DATABASE)
+    cursor = conn.cursor()
+    data = request.get_json()
+    mac_address = data.get('mac_address')
+    resettable = data.get('resettable')
+    print("dioboia"+str(resettable))
+    cursor.execute('UPDATE TAGS SET resettable = ? WHERE mac_address = ?;',(resettable, mac_address))
+    return jsonify(message="Set tag "+mac_address+" to resettable: "+ str(resettable))
+
+
 @app.route('/api/mops/all', methods=['GET'])
 def all_mops():
     conn = sqlite3.connect(DATABASE)
@@ -317,6 +330,8 @@ def get_missing_tags():
     result = [dict(zip(columns, row)) for row in data]
     conn.close()
     return jsonify(result)
+
+# 
 
 # Change the mop (reset the tag usage), identify the mop by mac_address
 @app.route('/api/mops/change', methods=['POST'])
