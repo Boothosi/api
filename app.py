@@ -258,6 +258,20 @@ def get_mops_usage_missing():
     conn.close()
     return jsonify(result)
 
+# Get all missing mops
+@app.route('/api/mops/missing/all', methods=['GET'])
+def get_missing_mops():
+    conn = sqlite3.connect(DATABASE)
+    cursor = conn.cursor()
+    cursor.execute(
+        'SELECT * FROM MOPS WHERE is_missing = 1'
+    )
+    columns = [column[0] for column in cursor.description]
+    data = cursor.fetchall()
+    result = [dict(zip(columns, row)) for row in data]
+    conn.close()
+    return jsonify(result)
+
 # Get the last known location of the missing mops
 @app.route('/api/mops/missing/last_location', methods=['GET'])
 def get_missing_mops_location():
