@@ -28,7 +28,7 @@ def all_db():
     data = cursor.fetchall()
     result = [dict(zip(columns, row)) for row in data]
     conn.close()
-    return jsonify(result)
+    return jsonify(data=result)
 
 @app.route('/api/mops/all', methods=['GET'])
 def all_mops():
@@ -90,7 +90,7 @@ def insert_mop():
 def update_mop_is_replaced():
     data = request.get_json()
     tag = data.get('tag')
-    is_replaced = 0
+    is_replaced = 1
     conn = sqlite3.connect(DATABASE)
     cursor = conn.cursor()
     cursor.execute(
@@ -109,7 +109,7 @@ def update_mop_in_use():
     conn = sqlite3.connect(DATABASE)
     cursor = conn.cursor()
     cursor.execute(
-        'UPDATE MOPS SET in_use = ? WHERE tag = ?',
+        'UPDATE MOPS SET in_use = ? WHERE tag = ? AND is_replaced = 0',
         (in_use, tag)
     )
     conn.commit()
@@ -120,12 +120,11 @@ def update_mop_in_use():
 def update_mop_usage():
     data = request.get_json()
     tag = data.get('tag')
-    usage = data.get('usage')
     conn = sqlite3.connect(DATABASE)
     cursor = conn.cursor()
     cursor.execute(
-        'UPDATE MOPS SET usage = ? WHERE tag = ? AND is_replaced = 0',
-        (usage, tag)
+        'UPDATE MOPS SET usage = usage + 1 WHERE tag = ? AND is_replaced = 0',
+        (tag, )
     )
     conn.commit()
     conn.close()
@@ -177,157 +176,231 @@ def insert_history():
     conn.close()
     return jsonify(message="Inserted successfully")
 
-# # Get the usage for every mop
-# @app.route('/api/mops/usage/all', methods=['GET'])
-# def get_tags_usage():
-#     usage = list(map(lambda tag: {
-#         "id": tag["id"],
-#         "mac_address": tag["mac_address"],
-#         "usage": tag["usage"]
-#     }, mock_mops_tags))
-#     return jsonify(usage)
+# Get the usage for every mop
+@app.route('/api/mops/usage/all', methods=['GET'])
+def get_mops_usage():
+    conn = sqlite3.connect(DATABASE)
+    cursor = conn.cursor()
+    cursor.execute(
+        'SELECT id, usage FROM MOPS'
+    )
+    columns = [column[0] for column in cursor.description]
+    data = cursor.fetchall()
+    result = [dict(zip(columns, row)) for row in data]
+    conn.close()
+    return jsonify(result)
 
-# # Get the usage status of tag's mop
-# @app.route('/api/mops/usage/greater_than/<int:count>', methods=['GET'])
-# def get_tags_by_usage_greater_than(count):
-#     filtered_tags = list(filter(lambda tag: tag["usage"] > count, mock_mops_tags))
-#     return jsonify(filtered_tags)
+# Get the usage of mops that are currently in use
+@app.route('/api/mops/usage/in_use', methods=['GET'])
+def get_mops_usage_in_use():
+    conn = sqlite3.connect(DATABASE)
+    cursor = conn.cursor()
+    cursor.execute(
+        'SELECT id, usage FROM MOPS WHERE in_use = 1'
+    )
+    columns = [column[0] for column in cursor.description]
+    data = cursor.fetchall()
+    result = [dict(zip(columns, row)) for row in data]
+    conn.close()
+    return jsonify(result)
 
-# # Get all mops that are in the laundry
-# @app.route('/api/mops/in_laundry', methods=['GET'])
-# def get_tags_in_laundry():
-#     mops_in_laundry = list(filter(lambda tag: not tag["in_use"], mock_mops_tags))
-#     return jsonify(mops_in_laundry)
+# Get the number of mops that are not in use and are not missing group by date in history
+@app.route('/api/history/storage', methods=['GET'])
+def get_history_storage():
+    conn = sqlite3.connect(DATABASE)
+    cursor = conn.cursor()
+    cursor.execute(
+        'SELECT timestamp, COUNT(DISTINCT tag) as count FROM HISTORY WHERE location = "laundry" GROUP BY DATE(timestamp)'
+    )
+    columns = [column[0] for column in cursor.description]
+    data = cursor.fetchall()
+    result = [dict(zip(columns, row)) for row in data]
+    conn.close()
+    return jsonify(result)
 
-# # Get all tags that are currently in use
-# @app.route('/api/mops/in_use', methods=['GET'])
-# def get_tags_in_use():
-#     mops_in_use = list(filter(lambda tag: tag["in_use"], mock_mops_tags))
-#     return jsonify(mops_in_use)
+# Get the usage of mops that are missing
+@app.route('/api/mops/usage/missing', methods=['GET'])
+def get_mops_usage_missing():
+    conn = sqlite3.connect(DATABASE)
+    cursor = conn.cursor()
+    cursor.execute(
+        'SELECT id, usage FROM MOPS WHERE is_missing = 1 AND in_use = 0'
+    )
+    columns = [column[0] for column in cursor.description]
+    data = cursor.fetchall()
+    result = [dict(zip(columns, row)) for row in data]
+    conn.close()
+    return jsonify(result)
 
-# # Get all tags that are missing
-# # Missing iff in_use == False && the work turn is over
-# @app.route('/api/mops/missing', methods=['GET'])
-# def get_missing_tags():
-#     missing_tags = list(filter(lambda tag: tag["is_missing"], mock_mops_tags))
-#     return jsonify(missing_tags)
+# Get the last known location of the missing mops
+@app.route('/api/mops/missing/last_location', methods=['GET'])
+def get_missing_mops_location():
+    conn = sqlite3.connect(DATABASE)
+    cursor = conn.cursor()
+    cursor.execute(
+        'SELECT id, last_location FROM MOPS WHERE is_missing = 1 AND in_use = 0'
+    )
+    columns = [column[0] for column in cursor.description]
+    data = cursor.fetchall()
+    result = [dict(zip(columns, row)) for row in data]
+    conn.close()
+    return jsonify(result)
 
-# # Get the last known location of the missing mops
-# @app.route('/api/mops/missing/last_location', methods=['GET'])
-# def get_missing_tags_location():
-#     missing_tags_location = list(map(lambda tag: {
-#         "id": tag["id"],
-#         "mac_address": tag["mac_address"],
-#         "last_location": tag["last_location"]
-#     }, filter(lambda tag: tag["is_missing"], mock_mops_tags))
-#     )
-#     return jsonify(missing_tags_location)
+# Get the last known time of the missing mops
+@app.route('/api/mops/missing/last_seen_datetime', methods=['GET'])
+def get_missing_mops_time():
+    conn = sqlite3.connect(DATABASE)
+    cursor = conn.cursor()
+    cursor.execute(
+        'SELECT id, last_seen_datetime FROM MOPS WHERE is_missing = 1 AND in_use = 0'
+    )
+    columns = [column[0] for column in cursor.description]
+    data = cursor.fetchall()
+    result = [dict(zip(columns, row)) for row in data]
+    conn.close()
+    return jsonify(result)
 
-# # Get the last known time of the missing mops
-# @app.route('/api/mops/missing/last_time_used', methods=['GET'])
-# def get_missing_tags_time():
-#     missing_tags_time = list(map(lambda tag: {
-#         "id": tag["id"],
-#         "mac_address": tag["mac_address"],
-#         "last_turn": tag["last_turn"]
-#     }, filter(lambda tag: tag["is_missing"], mock_mops_tags))
-#     )
-#     return jsonify(missing_tags_time)
+# Get the usage status of tag's mop
+@app.route('/api/mops/usage/<string:tag>', methods=['GET'])
+def get_mop_usage(tag):
+    conn = sqlite3.connect(DATABASE)
+    cursor = conn.cursor()
+    cursor.execute(
+        'SELECT usage FROM MOPS WHERE tag = ?',
+        (tag, )
+    )
+    columns = [column[0] for column in cursor.description]
+    data = cursor.fetchone()
+    result = dict(zip(columns, data))
+    conn.close()
+    return jsonify(result)
 
-# # Get the usage of the missing mops
-# @app.route('/api/mops/missing/usage', methods=['GET'])
-# def get_missing_tags_usage():
-#     missing_tags_usage = list(map(lambda tag: {
-#         "id": tag["id"],
-#         "mac_address": tag["mac_address"],
-#         "usage": tag["usage"]
-#     }, filter(lambda tag: tag["is_missing"], mock_mops_tags))
-#     )
-#     return jsonify(missing_tags_usage)
 
-# # Change the mop (reset the tag usage), identify the mop by mac_address
-# @app.route('/api/mops/change/<string:mac_address>', methods=['POST'])
-# def change_mop(mac_address):
-#     for tag in mock_mops_tags:
-#         if tag["mac_address"] == mac_address:
-#             tag["usage"] = 0
-#             tag["in_use"] = False
-#             return jsonify(tag)
-#     return jsonify(message="Tag not found")
+# Get all mops that are in the laundry
+@app.route('/api/mops/laundry', methods=['GET'])
+def get_mops_laundry():
+    conn = sqlite3.connect(DATABASE)
+    cursor = conn.cursor()
+    cursor.execute(
+        'SELECT * FROM MOPS WHERE last_location = "laundry"'
+    )
+    columns = [column[0] for column in cursor.description]
+    data = cursor.fetchall()
+    result = [dict(zip(columns, row)) for row in data]
+    conn.close()
+    return jsonify(result)
 
-# @app.route('/api/mops/location', methods=['POST'])
-# @app.route('/api/mops/location', methods=['POST'])
-# def notify_mop_location():
-#     # Get data from the POST request (expecting JSON with mac_address and location)
-#     data = request.get_json()
+# Get all tags that are currently in use
+@app.route('/api/tags/in_use', methods=['GET'])
+def get_tags_in_use():
+    conn = sqlite3.connect(DATABASE)
+    cursor = conn.cursor()
+    cursor.execute(
+        'SELECT * FROM TAGS WHERE in_use = 1'
+    )
+    columns = [column[0] for column in cursor.description]
+    data = cursor.fetchall()
+    result = [dict(zip(columns, row)) for row in data]
+    conn.close()
+    return jsonify(result)
+
+# Get all tags that are missing
+@app.route('/api/tags/missing', methods=['GET'])
+def get_missing_tags():
+    conn = sqlite3.connect(DATABASE)
+    cursor = conn.cursor()
+    cursor.execute(
+        'SELECT * FROM TAGS WHERE is_missing = 1'
+    )
+    columns = [column[0] for column in cursor.description]
+    data = cursor.fetchall()
+    result = [dict(zip(columns, row)) for row in data]
+    conn.close()
+    return jsonify(result)
+
+# Change the mop (reset the tag usage), identify the mop by mac_address
+@app.route('/api/mops/change', methods=['POST'])
+def change_mop():
+    data = request.get_json()
+    tag = data.get('tag')
+    conn = sqlite3.connect(DATABASE)
+    cursor = conn.cursor()
+    cursor.execute(
+        'UPDATE MOPS SET is_replaced = 1, in_use = 0 WHERE tag = ?',
+        (tag, )
+    )
+    last_location = "laundry"
+    last_seen_datetime = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    cursor.execute(
+        'INSERT INTO MOPS (tag, last_location, last_seen_datetime) VALUES (?, ?, ?)',
+        (tag, last_location, last_seen_datetime)
+    )
+    conn.commit()
+    conn.close()
+    return jsonify(message="Mop usage reset successfully")
+
+# Insert a new location and then update the mop's if needed
+@app.route('/api/history/notify', methods=['POST'])
+def notify_location():
+    data = request.get_json()
+    tag = data.get('tag')
+    location = data.get('location')
+    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    conn = sqlite3.connect(DATABASE)
+    cursor = conn.cursor()
+    # Select the last histories of the current day and order them from the most recent one
+    current_date = datetime.now().strftime('%Y-%m-%d')
+    cursor.execute(
+        'SELECT * FROM HISTORY WHERE tag = ? AND DATE(timestamp) = ? ORDER BY timestamp DESC',
+        (tag, current_date)
+    )
+    history_entries = cursor.fetchall()
+
+    if history_entries:
+        last_entry = history_entries[0]
+        last_location = last_entry[2]  # Assuming location is the third column
+
+        # Check if the last entry location is the same as the new location
+        if last_location == location:
+            # Update the timestamp of the last entry
+            cursor.execute(
+                'UPDATE HISTORY SET timestamp = ? WHERE id = ?',
+                (timestamp, last_entry[0])
+            )
+            # Also update mop
+            cursor.execute(
+                'UPDATE MOPS SET last_seen_datetime = ? WHERE tag = ? AND is_replaced = 0',
+                (timestamp, tag)
+            )
+        elif last_location == "laundry" and any(entry[2] != "laundry" for entry in history_entries[1:]):
+            # Update the in_use status of the mop to 0 and increment the usage by 1
+            cursor.execute(
+                'UPDATE MOPS SET in_use = 0, usage = usage + 1 WHERE tag = ?',
+                (tag, )
+            )
+        else:
+            # Insert a new entry
+            cursor.execute(
+                'INSERT INTO HISTORY (tag, location, timestamp) VALUES (?, ?, ?)',
+                (tag, location, timestamp)
+            )
+            # Also update the mop in use
+            cursor.execute(
+                'UPDATE MOPS SET in_use = 1 WHERE tag = ? AND is_replaced = 0',
+                (tag, )
+            )
+    else:
+        # If no history entries exist, insert a new entry
+        cursor.execute(
+            'INSERT INTO HISTORY (tag, location, timestamp) VALUES (?, ?, ?)',
+            (tag, location, timestamp)
+        )
+
+    conn.commit()
+    conn.close()
+    return jsonify(message="Location notified and updated everything successfully")
+
     
-#     mac_address = data.get('mac_address')
-#     location = data.get('location')
-
-#     if not mac_address or not location:
-#         return jsonify(message="Mac address and location are required"), 400
-    
-#     # Get the current timestamp (this will be stored in the 'last_turn' field)
-#     current_timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-#     current_date = datetime.now().strftime('%Y-%m-%d')  # Get the current date for checking (no time part)
-
-#     # Store the mop location and timestamp in the SQLite database
-#     conn = sqlite3.connect(DATABASE)
-#     cursor = conn.cursor()
-
-#     # Check if the mop has been in laundry, moved to another location, and returned to laundry
-#     cursor.execute('''
-#         SELECT * FROM MOCKAROO_DATA 
-#         WHERE mac_address = ? AND DATE(last_turn) = ?
-#         ORDER BY last_turn DESC
-#     ''', (mac_address, current_date))
-#     previous_entries = cursor.fetchall()
-
-#     # Determine the status for 'in_use'
-#     in_use_status = 'true'  # Default to in_use = true for any location
-    
-#     if previous_entries:
-#         # Check if the mop has been in laundry, then moved elsewhere, and returned to laundry
-#         for entry in previous_entries:
-#             last_location = entry[3]  # last_location is at index 3
-#             if last_location == 'laundry' and len(previous_entries) > 1:
-#                 for i in range(1, len(previous_entries)):
-#                     if previous_entries[i][3] != 'laundry':  # If it has been to another location
-#                         # If the mop was in laundry, moved to another location, and then back to laundry
-#                         in_use_status = 'false'
-#                         break
-#                 break
-    
-#     # Insert or update the mop's location in the database
-#     cursor.execute('''
-#         SELECT * FROM MOCKAROO_DATA 
-#         WHERE mac_address = ? AND last_location = ? AND DATE(last_turn) = ?
-#     ''', (mac_address, location, current_date))
-
-#     existing_mop = cursor.fetchone()
-
-#     if existing_mop:
-#         # If the record exists, update the timestamp and in_use status
-#         cursor.execute('''
-#             UPDATE MOCKAROO_DATA
-#             SET last_turn = ?, in_use = ?
-#             WHERE mac_address = ? AND last_location = ? AND DATE(last_turn) = ?
-#         ''', (current_timestamp, in_use_status, mac_address, location, current_date))
-#         message = "Mop location timestamp updated successfully"
-#     else:
-#         # If no record exists, insert a new record with in_use status
-#         cursor.execute('''
-#             INSERT INTO MOCKAROO_DATA (mac_address, last_location, last_turn, in_use)
-#             VALUES (?, ?, ?, ?)
-#         ''', (mac_address, location, current_timestamp, in_use_status))
-#         message = "Mop location and timestamp posted successfully"
-    
-#     # Commit changes and close the connection
-#     conn.commit()
-#     conn.close()
-    
-#     return jsonify(message=message, mac_address=mac_address, location=location, timestamp=current_timestamp)
-
 
 if __name__ == '__main__':
     app.run(host="0.0.0.0", port=5000,debug=True)
