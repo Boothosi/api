@@ -339,68 +339,87 @@ def change_mop():
     conn.close()
     return jsonify(message="Mop usage reset successfully")
 
-# Insert a new location and then update the mop's if needed
-@app.route('/api/history/notify', methods=['POST'])
+# Insert a notification inside the database
+@app.route('/api/notify_location', methods=['POST'])
 def notify_location():
+    # Get the notification {tag, location, timestamp}
     data = request.get_json()
-    tag = data.get('tag')
-    location = data.get('location')
-    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    tag = data.get('tag') # From the sender
+    location = data.get('location') # From the sender
+    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S') # Calculated by the API server
+    # Connect to the DB
     conn = sqlite3.connect(DATABASE)
     cursor = conn.cursor()
-    # Select the last histories of the current day and order them from the most recent one
-    current_date = datetime.now().strftime('%Y-%m-%d')
+    # Get the history list, for that tag (=mop), ordered by most recent timestamp
     cursor.execute(
-        'SELECT * FROM HISTORY WHERE tag = ? AND DATE(timestamp) = ? ORDER BY timestamp DESC',
-        (tag, current_date)
+        'SELECT * FROM HISTORY WHERE tag = ? ORDER BY timestamp DESC',
+        (tag, )
     )
     history_entries = cursor.fetchall()
 
+    # If there are history entries
     if history_entries:
+        # Take the last entry and the previous location
         last_entry = history_entries[0]
-        last_location = last_entry[2]  # Assuming location is the third column
-
-        # Check if the last entry location is the same as the new location
+        last_location = last_entry[2]
+        # If the last location is the same as the new location
         if last_location == location:
-            # Update the timestamp of the last entry
+            # No need to add an entry, just update the timestamp
             cursor.execute(
                 'UPDATE HISTORY SET timestamp = ? WHERE id = ?',
                 (timestamp, last_entry[0])
             )
-            # Also update mop
+            # Also do the update in the mop in use
             cursor.execute(
                 'UPDATE MOPS SET last_seen_datetime = ? WHERE tag = ? AND is_replaced = 0',
                 (timestamp, tag)
             )
-        elif last_location == "laundry" and any(entry[2] != "laundry" for entry in history_entries[1:]):
-            # Update the in_use status of the mop to 0 and increment the usage by 1
-            cursor.execute(
-                'UPDATE MOPS SET in_use = 0, usage = usage + 1 WHERE tag = ?',
-                (tag, )
-            )
+        # If the last location and the new location are different
         else:
-            # Insert a new entry
-            cursor.execute(
-                'INSERT INTO HISTORY (tag, location, timestamp) VALUES (?, ?, ?)',
-                (tag, location, timestamp)
-            )
-            # Also update the mop in use
-            cursor.execute(
-                'UPDATE MOPS SET in_use = 1 WHERE tag = ? AND is_replaced = 0',
-                (tag, )
-            )
+            # If the last location was laundry, then the new location is not laundry
+            # Add an history entry
+            if last_location == "laundry":
+                cursor.execute(
+                    'INSERT INTO HISTORY (tag, location, timestamp) VALUES (?, ?, ?)',
+                    (tag, location, timestamp)
+                )
+                # Then the mop is now in use
+                cursor.execute(
+                    'UPDATE MOPS SET in_use = 1 WHERE tag = ? AND is_replaced = 0',
+                    (tag, )
+                )
+            # If the last location was not laundry
+            # Then the new location can be anything except laundry
+            else:
+                # If the mop is still in same location:
+                # State covered by first external if statement
+                # Then the mop is still in use
+                # No need to update in_use, but add an entry and update mop
+                cursor.execute(
+                    'INSERT INTO HISTORY (tag, location, timestamp) VALUES (?, ?, ?)',
+                    (tag, location, timestamp)
+                )
+                cursor.execute(
+                    'UPDATE MOPS SET last_seen_datetime = ? WHERE tag = ? AND is_replaced = 0',
+                    (timestamp, tag)
+                )
+    # If there are no history entries
+    # Then this is the first movement of a new mop (by default starting from laundry)
     else:
-        # If no history entries exist, insert a new entry
+        # Add an history entry
         cursor.execute(
             'INSERT INTO HISTORY (tag, location, timestamp) VALUES (?, ?, ?)',
             (tag, location, timestamp)
         )
-
+        # Then the mop is now in use
+        cursor.execute(
+            'UPDATE MOPS SET in_use = 1 WHERE tag = ? AND is_replaced = 0',
+            (tag, )
+        )
+    # Close the db stuff and return
     conn.commit()
     conn.close()
-    return jsonify(message="Location notified and updated everything successfully")
-
-    
+    return jsonify(message="Location notified and updated everything successfully")    
 
 if __name__ == '__main__':
     app.run(host="0.0.0.0", port=5000,debug=True)
